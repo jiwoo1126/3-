@@ -1,68 +1,118 @@
 import streamlit as st
-import random
+from google import genai
+from google.genai import types
 
 # 페이지 설정
 st.set_page_config(
-    page_title="음식 추천 앱",
-    page_icon="🍜",
-    layout="centered"
+    page_title="연애상담 챗봇",
+    page_icon="💌",
 )
 
-# 음식 데이터
-foods = {
-    ("기쁨", "맑음", "안 매움"): [
-        ("초밥", "https://images.unsplash.com/photo-1579871494447-9811cf80d66c"),
-        ("파스타", "https://images.unsplash.com/photo-1521389508051-d7ffb5dc8i")
-    ],
-    ("우울", "비", "매움"): [
-        ("짬뽕", "https://images.unsplash.com/photo-1585032226651-759b368d7246"),
-        ("떡볶이", "https://images.unsplash.com/photo-1607301405390-d831c242f59b")
-    ],
-    ("피곤", "추움", "매움"): [
-        ("김치찌개", "https://images.unsplash.com/photo-1590301157890-4810ed352733"),
-        ("마라탕", "https://images.unsplash.com/photo-1625944525533-473f1b3d54f6")
-    ],
-    ("행복", "더움", "안 매움"): [
-        ("냉면", "https://images.unsplash.com/photo-1635363638580-c2809d049eee"),
-        ("샐러드", "https://images.unsplash.com/photo-1546793665-c74683f339c1")
-    ]
-}
+st.title("💌 연애상담 챗봇")
+st.caption("Gemini 2.5 Flash Lite 기반 AI 상담")
 
-# 제목
-st.title("🍽️ 음식 추천 앱")
-st.write("현재 기분과 날씨에 맞는 음식을 추천해드려요!")
+# API 키 불러오기
+try:
+    api_key = st.secrets["GEMINI_API_KEY"]
+except Exception:
+    st.error("❌ Secrets에 GEMINI_API_KEY를 설정해주세요.")
+    st.stop()
+
+# Gemini 클라이언트 생성
+try:
+    client = genai.Client(api_key=api_key)
+except Exception as e:
+    st.error(f"❌ Gemini 클라이언트 생성 실패: {e}")
+    st.stop()
+
+# 시스템 프롬프트
+SYSTEM_PROMPT = """
+너는 공감 능력이 뛰어난 연애상담 전문 AI야.
+
+규칙:
+- 친절하고 따뜻하게 답변할 것
+- 상대를 비난하지 말 것
+- 현실적이고 구체적인 조언 제공
+- 너무 단정짓지 말 것
+- 사용자의 감정을 먼저 공감할 것
+- 답변은 자연스럽고 대화체로 작성
+"""
+
+# 채팅 기록 초기화
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+# 이전 대화 출력
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
 # 사용자 입력
-mood = st.selectbox(
-    "오늘 기분은 어떤가요?",
-    ["기쁨", "우울", "피곤", "행복"]
-)
+user_input = st.chat_input("연애 고민을 이야기해보세요...")
 
-weather = st.selectbox(
-    "오늘 날씨는 어떤가요?",
-    ["맑음", "비", "추움", "더움"]
-)
+if user_input:
 
-spicy = st.radio(
-    "매운 음식 좋아하시나요?",
-    ["매움", "안 매움"]
-)
+    # 사용자 메시지 저장
+    st.session_state.messages.append({
+        "role": "user",
+        "content": user_input
+    })
 
-# 추천 버튼
-if st.button("음식 추천 받기 🍴"):
+    # 사용자 메시지 출력
+    with st.chat_message("user"):
+        st.markdown(user_input)
 
-    key = (mood, weather, spicy)
+    # AI 응답 생성
+    with st.chat_message("assistant"):
 
-    if key in foods:
-        food = random.choice(foods[key])
+        with st.spinner("생각 중이에요..."):
 
-        st.success(f"추천 음식: {food[0]}")
+            try:
+                # 이전 대화 기록 문자열 생성
+                history_text = ""
 
-        st.image(
-            food[1],
-            caption=food[0],
-            use_column_width=True
-        )
+                for msg in st.session_state.messages:
+                    role = "사용자" if msg["role"] == "user" else "AI"
+                    history_text += f"{role}: {msg['content']}\n"
 
-    else:
-        st.warning("조건에 맞는 음식이 없어요 😢")
+                prompt = f"""
+{SYSTEM_PROMPT}
+
+아래는 이전 대화 내용이야.
+
+{history_text}
+
+이어서 자연스럽게 답변해줘.
+"""
+
+                response = client.models.generate_content(
+                    model="gemini-2.5-flash-lite",
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        temperature=0.8,
+                        max_output_tokens=500,
+                    )
+                )
+
+                ai_response = response.text
+
+                # 응답 출력
+                st.markdown(ai_response)
+
+                # 기록 저장
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": ai_response
+                })
+
+            except Exception as e:
+                error_message = f"""
+⚠️ 오류가 발생했어요.
+
+오류 내용:
+`{str(e)}`
+
+잠시 후 다시 시도해주세요.
+"""
+
+                st.error(error_message)
